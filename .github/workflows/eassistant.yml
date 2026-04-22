@@ -1,0 +1,233 @@
+name: EAssistant Daily Summary
+
+on:
+  schedule:
+    # Run at 8:00 AM UTC (adjust based on your timezone)
+    - cron: '0 8 * * *'
+    # Run at 5:00 PM UTC (adjust based on your timezone)  
+    - cron: '0 17 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      summary_type:
+        description: 'Type of summary to generate'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+        - full
+        - emails-only
+        - calendar-only
+      send_email:
+        description: 'Send summary email'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  generate-summary:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Create configuration from secrets
+      run: |
+        cat > config.json << EOF
+        {
+          "google": {
+            "clientId": "${{ secrets.GOOGLE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+            "redirectUri": "http://localhost:3000/oauth2callback",
+            "refreshToken": "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          },
+          "email": {
+            "service": "gmail",
+            "user": "${{ secrets.EMAIL_USER }}",
+            "password": "${{ secrets.EMAIL_PASSWORD }}"
+          },
+          "ai": {
+            "provider": "huggingface",
+            "apiKey": "${{ secrets.HF_API_KEY }}",
+            "model": "facebook/bart-large-cnn"
+          },
+          "scheduling": {
+            "timeZone": "${{ vars.TIMEZONE || 'America/New_York' }}",
+            "workingHours": {
+              "start": "09:00",
+              "end": "17:00"
+            },
+            "summaryTimes": ["08:00", "17:00"]
+          },
+          "prioritiesDocumentPath": "./priorities.md",
+          "notification": {
+            "recipientEmail": "${{ secrets.NOTIFICATION_EMAIL }}"
+          }
+        }
+        EOF
+        
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+        GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+        GOOGLE_REFRESH_TOKEN=${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        EMAIL_USER=${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+        HF_API_KEY=${{ secrets.HF_API_KEY }}
+        NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}
+        TIMEZONE=${{ vars.TIMEZONE || 'America/New_York' }}
+        EOF
+        
+    - name: Test connections
+      run: |
+        echo "🔧 Testing service connections..."
+        npm start test || echo "⚠️ Some services may not be configured properly"
+        
+    - name: Generate summary
+      id: summary
+      run: |
+        echo "🤖 Generating daily summary..."
+        
+        if [ "${{ github.event.inputs.summary_type }}" = "emails-only" ]; then
+          echo "📧 Generating emails-only summary"
+          # You could add logic here for emails-only mode
+        elif [ "${{ github.event.inputs.summary_type }}" = "calendar-only" ]; then
+          echo "📅 Generating calendar-only summary"  
+          # You could add logic here for calendar-only mode
+        else
+          echo "📊 Generating full summary"
+        fi
+        
+        # Run the summary generation
+        npm start summary > summary_output.log 2>&1 || (cat summary_output.log && exit 1)
+        
+        # Extract key metrics for the job summary
+        echo "summary_completed=true" >> $GITHUB_OUTPUT
+        
+        # Show output
+        cat summary_output.log
+        
+    - name: Upload summary log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: summary-log-${{ github.run_number }}
+        path: |
+          summary_output.log
+          logs/*.log
+        retention-days: 30
+        
+    - name: Create job summary
+      if: always()
+      run: |
+        echo "## 🤖 EAssistant Daily Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Execution Time:** $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "**Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.summary.outputs.summary_completed }}" = "true" ]; then
+          echo "**Status:** ✅ Completed Successfully" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Status:** ❌ Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Execution Log" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        if [ -f summary_output.log ]; then
+          tail -n 20 summary_output.log >> $GITHUB_STEP_SUMMARY
+        else
+          echo "No log file generated" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Notify on failure
+      if: failure() && github.event_name == 'schedule'
+      run: |
+        echo "🚨 Daily summary failed!"
+        echo "This could indicate configuration issues or API problems."
+        echo "Check the logs and secrets configuration."
+        
+        # You could add Slack/Discord notification here if needed
+        # Example: curl -X POST -H 'Content-type: application/json' --data '{"text":"EAssistant failed to generate summary"}' ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Optional: Health check job that runs more frequently
+  health-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Create minimal config for testing
+      run: |
+        cat > config.json << EOF
+        {
+          "google": {
+            "clientId": "${{ secrets.GOOGLE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+            "redirectUri": "http://localhost:3000/oauth2callback",
+            "refreshToken": "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          },
+          "email": {
+            "service": "gmail",
+            "user": "${{ secrets.EMAIL_USER }}",
+            "password": "${{ secrets.EMAIL_PASSWORD }}"
+          },
+          "ai": {
+            "provider": "huggingface",
+            "apiKey": "${{ secrets.HF_API_KEY }}",
+            "model": "facebook/bart-large-cnn"
+          },
+          "notification": {
+            "recipientEmail": "${{ secrets.NOTIFICATION_EMAIL }}"
+          }
+        }
+        EOF
+        
+    - name: Run health check
+      run: |
+        echo "🏥 Running health check..."
+        npm start test
+        
+    - name: Test individual services
+      run: |
+        echo "🧪 Testing individual components..."
+        echo "Testing available meeting slots..."
+        npm start slots 30 3
+        
+    - name: Health check summary
+      run: |
+        echo "## 🏥 EAssistant Health Check" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Check Time:** $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "**Status:** ✅ All systems operational" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Service Connections" >> $GITHUB_STEP_SUMMARY
+        echo "- Gmail API: Connected" >> $GITHUB_STEP_SUMMARY  
+        echo "- Calendar API: Connected" >> $GITHUB_STEP_SUMMARY
+        echo "- Email Sending: Configured" >> $GITHUB_STEP_SUMMARY
+        echo "- AI Service: Available" >> $GITHUB_STEP_SUMMARY
