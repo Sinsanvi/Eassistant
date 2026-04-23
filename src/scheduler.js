@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const EAssistant = require('./index');
 const config = require('./config');
-const moment = require('moment');
+const moment = require('moment-timezone');
 
 class Scheduler {
   constructor() {

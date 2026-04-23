@@ -18,7 +18,7 @@ class EmailSender {
         }
       };
 
-      this.transporter = nodemailer.createTransporter(emailConfig);
+      this.transporter = nodemailer.createTransport(emailConfig);
     } catch (error) {
       console.error('Error setting up email transporter:', error.message);
     }

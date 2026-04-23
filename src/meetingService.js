@@ -1,5 +1,5 @@
 const GoogleCalendarService = require('./googleCalendar');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const config = require('./config');
 
 class MeetingService {
