@@ -4,6 +4,7 @@ const AIService = require('./aiService');
 const PriorityService = require('./priorityService');
 const MeetingService = require('./meetingService');
 const EmailSender = require('./emailSender');
+const MeetingBooker = require('./meetingBooker');
 const config = require('./config');
 const moment = require('moment');
 
@@ -15,6 +16,7 @@ class EAssistant {
     this.priorityService = new PriorityService();
     this.meetingService = new MeetingService();
     this.emailSender = new EmailSender();
+    this.meetingBooker = new MeetingBooker();
   }
 
   async generateSummary() {
@@ -332,31 +334,84 @@ async function main() {
       break;
       
     case 'book':
-      // Example booking - in real use, this would come from email parsing or API
-      const sampleMeeting = {
-        title: 'Sample Meeting',
-        description: 'Test meeting booking',
-        startTime: moment().add(1, 'day').hour(14).minute(0).toISOString(),
-        endTime: moment().add(1, 'day').hour(15).minute(0).toISOString(),
-        attendees: []
-      };
-      const bookResult = await assistant.bookMeeting(sampleMeeting);
+      // Meeting booking with parameters or environment variables
+      const title = process.argv[3] || process.env.MEETING_TITLE || 'Team Meeting';
+      const date = process.argv[4] || process.env.MEETING_DATE;
+      const time = process.argv[5] || process.env.MEETING_TIME;
+      const attendees = (process.argv[6] || process.env.MEETING_ATTENDEES || '').split(',').filter(email => email.trim());
+      const meetingDuration = parseInt(process.argv[7] || process.env.MEETING_DURATION || '60');
+
+      if (!date || !time) {
+        console.log('❌ Error: Date and time are required');
+        console.log('Usage: npm start book "Meeting Title" "YYYY-MM-DD" "HH:MM" "email1@example.com,email2@example.com" [duration]');
+        console.log('   Or: npm start book-tomorrow "HH:MM" "email@example.com" "Meeting Title"');
+        console.log('   Or: Set environment variables: MEETING_TITLE, MEETING_DATE, MEETING_TIME, MEETING_ATTENDEES, MEETING_DURATION');
+        break;
+      }
+
+      const bookResult = await assistant.meetingBooker.bookMeeting({
+        title,
+        date,
+        time,
+        attendees,
+        duration: meetingDuration,
+        sendConfirmation: true
+      });
       console.log('\n📅 Booking Result:', JSON.stringify(bookResult, null, 2));
+      break;
+
+    case 'book-tomorrow':
+      const tomorrowTime = process.argv[3] || process.env.MEETING_TIME || '10:00';
+      const tomorrowAttendees = process.argv[4] || process.env.MEETING_ATTENDEES || '';
+      const tomorrowTitle = process.argv[5] || process.env.MEETING_TITLE || 'Tomorrow Meeting';
+
+      if (!tomorrowAttendees) {
+        console.log('❌ Error: Attendee email is required');
+        console.log('Usage: npm start book-tomorrow "10:00" "email@example.com" "Meeting Title"');
+        break;
+      }
+
+      const tomorrowResult = await assistant.meetingBooker.bookTomorrow(
+        tomorrowTime,
+        tomorrowAttendees.split(',').map(email => email.trim()),
+        tomorrowTitle
+      );
+      console.log('\n📅 Tomorrow Meeting Result:', JSON.stringify(tomorrowResult, null, 2));
+      break;
+
+    case 'find-slots':
+      const slotDuration = parseInt(process.argv[3]) || parseInt(process.env.SLOT_DURATION) || 60;
+      const slotDays = parseInt(process.argv[4]) || parseInt(process.env.SLOT_DAYS) || 7;
+      const availableSlots = await assistant.meetingBooker.findAvailableSlots({
+        duration: slotDuration,
+        days: slotDays
+      });
+      console.log('\n🕐 Available Slots:', JSON.stringify(availableSlots, null, 2));
       break;
       
     default:
       console.log(`
 🤖 E-Assistant CLI Commands:
 
-  npm start summary     Generate and send daily summary
-  npm start test        Test all service connections  
-  npm start slots [duration] [days]  Find available meeting slots
-  npm start book        Book a sample meeting (for testing)
+  npm start summary                    Generate and send daily summary
+  npm start test                       Test all service connections  
+  npm start slots [duration] [days]    Find available meeting slots
+  npm start find-slots [duration] [days]  Advanced slot finding
+  
+  Meeting Booking:
+  npm start book "Title" "YYYY-MM-DD" "HH:MM" "email1,email2" [duration]
+  npm start book-tomorrow "HH:MM" "email@example.com" "Meeting Title"
 
 Examples:
   npm start summary
-  npm start slots 30 5
   npm start test
+  npm start slots 30 5
+  npm start find-slots 60 7
+  npm start book "Team Sync" "2026-04-26" "10:00" "user@example.com" 60
+  npm start book-tomorrow "14:00" "colleague@company.com" "Project Review"
+
+Environment Variables (for GitHub Actions):
+  MEETING_TITLE, MEETING_DATE, MEETING_TIME, MEETING_ATTENDEES, MEETING_DURATION
       `);
   }
 }

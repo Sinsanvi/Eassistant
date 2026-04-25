@@ -1,0 +1,223 @@
+name: Book Meeting
+
+on:
+  # Allow manual triggering with meeting details
+  workflow_dispatch:
+    inputs:
+      meeting_title:
+        description: 'Meeting Title'
+        required: true
+        default: 'Team Meeting'
+        type: string
+      meeting_date:
+        description: 'Meeting Date (YYYY-MM-DD)'
+        required: true
+        type: string
+      meeting_time:
+        description: 'Meeting Time (HH:MM)'
+        required: true
+        default: '10:00'
+        type: string
+      attendees:
+        description: 'Attendee emails (comma separated)'
+        required: true
+        type: string
+      duration:
+        description: 'Meeting duration in minutes'
+        required: false
+        default: '60'
+        type: string
+      send_confirmation:
+        description: 'Send confirmation email'
+        required: false
+        default: true
+        type: boolean
+
+  # Schedule recurring meetings (optional examples)
+  # Uncomment and customize as needed
+  # schedule:
+  #   # Weekly team meeting every Monday at 10 AM UTC
+  #   - cron: '0 10 * * 1'
+
+jobs:
+  book-meeting:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Create configuration from secrets
+      run: |
+        cat > config.json << EOF
+        {
+          "google": {
+            "clientId": "${{ secrets.GOOGLE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+            "redirectUri": "http://localhost:3000/oauth2callback",
+            "refreshToken": "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          },
+          "email": {
+            "service": "gmail",
+            "user": "${{ secrets.EMAIL_USER }}",
+            "password": "${{ secrets.EMAIL_PASSWORD }}"
+          },
+          "ai": {
+            "provider": "huggingface",
+            "apiKey": "${{ secrets.HF_API_KEY }}",
+            "model": "facebook/bart-large-cnn"
+          },
+          "scheduling": {
+            "timeZone": "${{ vars.TIMEZONE || 'America/New_York' }}",
+            "workingHours": {
+              "start": "09:00",
+              "end": "17:00"
+            },
+            "summaryTimes": ["08:00", "17:00"]
+          },
+          "prioritiesDocumentPath": "./priorities.md",
+          "notification": {
+            "recipientEmail": "${{ secrets.NOTIFICATION_EMAIL }}"
+          }
+        }
+        EOF
+        
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+        GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+        GOOGLE_REFRESH_TOKEN=${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        EMAIL_USER=${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+        HF_API_KEY=${{ secrets.HF_API_KEY }}
+        NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}
+        TIMEZONE=${{ vars.TIMEZONE || 'America/New_York' }}
+        MEETING_TITLE=${{ github.event.inputs.meeting_title || 'Scheduled Meeting' }}
+        MEETING_DATE=${{ github.event.inputs.meeting_date }}
+        MEETING_TIME=${{ github.event.inputs.meeting_time || '10:00' }}
+        MEETING_ATTENDEES=${{ github.event.inputs.attendees }}
+        MEETING_DURATION=${{ github.event.inputs.duration || '60' }}
+        EOF
+        
+    - name: Test connections
+      run: |
+        echo "🔧 Testing service connections..."
+        npm start test || (echo "⚠️ Some services may not be configured properly" && exit 1)
+        
+    - name: Validate meeting inputs
+      run: |
+        echo "📋 Validating meeting details..."
+        
+        if [ -z "${{ github.event.inputs.meeting_date }}" ]; then
+          echo "❌ Error: Meeting date is required"
+          exit 1
+        fi
+        
+        if [ -z "${{ github.event.inputs.attendees }}" ]; then
+          echo "❌ Error: At least one attendee is required"
+          exit 1
+        fi
+        
+        # Validate date format (basic check)
+        if [[ ! "${{ github.event.inputs.meeting_date }}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+          echo "❌ Error: Date must be in YYYY-MM-DD format"
+          exit 1
+        fi
+        
+        echo "✅ Meeting inputs validated successfully"
+        
+    - name: Book meeting
+      id: book_meeting
+      run: |
+        echo "📅 Booking meeting: ${{ github.event.inputs.meeting_title }}"
+        echo "📅 Date: ${{ github.event.inputs.meeting_date }} at ${{ github.event.inputs.meeting_time }}"
+        echo "👥 Attendees: ${{ github.event.inputs.attendees }}"
+        echo "⏱️ Duration: ${{ github.event.inputs.duration || '60' }} minutes"
+        
+        # Book the meeting using environment variables
+        npm start book "${{ github.event.inputs.meeting_title }}" "${{ github.event.inputs.meeting_date }}" "${{ github.event.inputs.meeting_time }}" "${{ github.event.inputs.attendees }}" "${{ github.event.inputs.duration || '60' }}" > meeting_result.log 2>&1
+        
+        # Check if booking was successful
+        if grep -q '"success": true' meeting_result.log; then
+          echo "booking_success=true" >> $GITHUB_OUTPUT
+          echo "✅ Meeting booked successfully!"
+        else
+          echo "booking_success=false" >> $GITHUB_OUTPUT
+          echo "❌ Meeting booking failed"
+          cat meeting_result.log
+          exit 1
+        fi
+        
+        # Show the result
+        echo "📋 Booking Result:"
+        cat meeting_result.log
+        
+    - name: Upload meeting logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: meeting-booking-log-${{ github.run_number }}
+        path: |
+          meeting_result.log
+        retention-days: 30
+        
+    - name: Create job summary
+      if: always()
+      run: |
+        echo "## 📅 Meeting Booking Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Meeting Title:** ${{ github.event.inputs.meeting_title }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Date & Time:** ${{ github.event.inputs.meeting_date }} at ${{ github.event.inputs.meeting_time }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Duration:** ${{ github.event.inputs.duration || '60' }} minutes" >> $GITHUB_STEP_SUMMARY
+        echo "**Attendees:** ${{ github.event.inputs.attendees }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Timezone:** ${{ vars.TIMEZONE || 'America/New_York' }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.book_meeting.outputs.booking_success }}" = "true" ]; then
+          echo "**Status:** ✅ Successfully Booked" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Meeting Created!" >> $GITHUB_STEP_SUMMARY
+          echo "- Calendar invitations sent to all attendees" >> $GITHUB_STEP_SUMMARY
+          echo "- Meeting added to your Google Calendar" >> $GITHUB_STEP_SUMMARY
+          echo "- Confirmation email sent (if enabled)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Status:** ❌ Booking Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Troubleshooting" >> $GITHUB_STEP_SUMMARY
+          echo "- Check if the time slot is available" >> $GITHUB_STEP_SUMMARY
+          echo "- Verify attendee email addresses" >> $GITHUB_STEP_SUMMARY
+          echo "- Ensure date is in the future" >> $GITHUB_STEP_SUMMARY
+          echo "- Review logs for detailed error information" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+    - name: Find alternative slots on failure
+      if: failure()
+      run: |
+        echo "🔍 Finding alternative meeting slots..."
+        npm start find-slots "${{ github.event.inputs.duration || '60' }}" 7 > alternatives.log 2>&1 || echo "Could not find alternatives"
+        
+        if [ -f alternatives.log ]; then
+          echo "## 💡 Alternative Time Slots" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          head -20 alternatives.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "🚨 Meeting booking failed!"
+        echo "Check the logs and job summary for details."
+        echo "You may need to:"
+        echo "  1. Choose a different time slot"
+        echo "  2. Verify attendee email addresses" 
+        echo "  3. Check your calendar for conflicts"

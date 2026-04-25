@@ -1,0 +1,191 @@
+name: Find Meeting Slots
+
+on:
+  # Allow manual triggering to find available slots
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Meeting duration in minutes'
+        required: false
+        default: '60'
+        type: string
+      days:
+        description: 'Number of days to search ahead'
+        required: false
+        default: '7'
+        type: string
+      timezone:
+        description: 'Timezone for results'
+        required: false
+        default: 'America/New_York'
+        type: string
+
+  # Schedule to run every Monday morning to show weekly availability
+  schedule:
+    - cron: '0 9 * * 1'  # 9 AM UTC every Monday
+
+jobs:
+  find-slots:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Create configuration from secrets
+      run: |
+        cat > config.json << EOF
+        {
+          "google": {
+            "clientId": "${{ secrets.GOOGLE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+            "redirectUri": "http://localhost:3000/oauth2callback",
+            "refreshToken": "${{ secrets.GOOGLE_REFRESH_TOKEN }}"
+          },
+          "email": {
+            "service": "gmail",
+            "user": "${{ secrets.EMAIL_USER }}",
+            "password": "${{ secrets.EMAIL_PASSWORD }}"
+          },
+          "ai": {
+            "provider": "huggingface",
+            "apiKey": "${{ secrets.HF_API_KEY }}",
+            "model": "facebook/bart-large-cnn"
+          },
+          "scheduling": {
+            "timeZone": "${{ github.event.inputs.timezone || vars.TIMEZONE || 'America/New_York' }}",
+            "workingHours": {
+              "start": "09:00",
+              "end": "17:00"
+            },
+            "summaryTimes": ["08:00", "17:00"]
+          },
+          "prioritiesDocumentPath": "./priorities.md",
+          "notification": {
+            "recipientEmail": "${{ secrets.NOTIFICATION_EMAIL }}"
+          }
+        }
+        EOF
+        
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+        GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+        GOOGLE_REFRESH_TOKEN=${{ secrets.GOOGLE_REFRESH_TOKEN }}
+        EMAIL_USER=${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}
+        HF_API_KEY=${{ secrets.HF_API_KEY }}
+        NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}
+        TIMEZONE=${{ github.event.inputs.timezone || vars.TIMEZONE || 'America/New_York' }}
+        SLOT_DURATION=${{ github.event.inputs.duration || '60' }}
+        SLOT_DAYS=${{ github.event.inputs.days || '7' }}
+        EOF
+        
+    - name: Test connections
+      run: |
+        echo "🔧 Testing service connections..."
+        npm start test || (echo "⚠️ Some services may not be configured properly" && exit 1)
+        
+    - name: Find available slots
+      id: find_slots
+      run: |
+        echo "🔍 Finding available meeting slots..."
+        echo "⏱️ Duration: ${{ github.event.inputs.duration || '60' }} minutes"
+        echo "📅 Days ahead: ${{ github.event.inputs.days || '7' }} days"
+        echo "🌍 Timezone: ${{ github.event.inputs.timezone || vars.TIMEZONE || 'America/New_York' }}"
+        
+        # Find available slots
+        npm start find-slots "${{ github.event.inputs.duration || '60' }}" "${{ github.event.inputs.days || '7' }}" > slots_result.log 2>&1
+        
+        # Check if slots were found
+        if grep -q '"success": true' slots_result.log; then
+          echo "slots_found=true" >> $GITHUB_OUTPUT
+          
+          # Extract slot count
+          SLOT_COUNT=$(grep -o '"count": [0-9]*' slots_result.log | grep -o '[0-9]*' | head -1)
+          echo "slot_count=$SLOT_COUNT" >> $GITHUB_OUTPUT
+          echo "✅ Found $SLOT_COUNT available slots"
+        else
+          echo "slots_found=false" >> $GITHUB_OUTPUT
+          echo "slot_count=0" >> $GITHUB_OUTPUT
+          echo "❌ No available slots found"
+        fi
+        
+        # Show the result
+        echo "📋 Slots Result:"
+        cat slots_result.log
+        
+    - name: Email slot availability (on schedule)
+      if: github.event_name == 'schedule' && steps.find_slots.outputs.slots_found == 'true'
+      run: |
+        echo "📧 Sending weekly availability email..."
+        
+        # Create a custom summary for weekly availability
+        cat > weekly_availability.json << EOF
+        {
+          "customContent": {
+            "subject": "Weekly Meeting Availability - ${{ github.event.inputs.timezone || vars.TIMEZONE || 'America/New_York' }}",
+            "html": "<h2>📅 This Week's Available Meeting Slots</h2><p>Duration: ${{ github.event.inputs.duration || '60' }} minutes</p><pre>$(cat slots_result.log | tail -20)</pre>",
+            "text": "This Week's Available Meeting Slots\nDuration: ${{ github.event.inputs.duration || '60' }} minutes\n\n$(cat slots_result.log | tail -20)"
+          }
+        }
+        EOF
+        
+        # Send the availability email (this would need to be implemented in the email sender)
+        echo "Weekly availability email prepared"
+        
+    - name: Upload slot results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: meeting-slots-${{ github.run_number }}
+        path: |
+          slots_result.log
+        retention-days: 30
+        
+    - name: Create job summary
+      if: always()
+      run: |
+        echo "## 🕐 Meeting Slot Finder Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Search Parameters:**" >> $GITHUB_STEP_SUMMARY
+        echo "- Duration: ${{ github.event.inputs.duration || '60' }} minutes" >> $GITHUB_STEP_SUMMARY
+        echo "- Search Period: ${{ github.event.inputs.days || '7' }} days" >> $GITHUB_STEP_SUMMARY
+        echo "- Timezone: ${{ github.event.inputs.timezone || vars.TIMEZONE || 'America/New_York' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Execution Time: $(date)" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.find_slots.outputs.slots_found }}" = "true" ]; then
+          echo "**Status:** ✅ Found ${{ steps.find_slots.outputs.slot_count }} available slots" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📅 Available Time Slots" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f slots_result.log ]; then
+            # Show first 20 lines of slots
+            head -30 slots_result.log | tail -20 >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **To book a meeting:** Use the 'Book Meeting' workflow with one of these time slots" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "**Status:** ❌ No available slots found" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🤔 Possible Reasons" >> $GITHUB_STEP_SUMMARY
+          echo "- Calendar is fully booked for the search period" >> $GITHUB_STEP_SUMMARY
+          echo "- Requested duration is too long for available gaps" >> $GITHUB_STEP_SUMMARY
+          echo "- Search period may be too short" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Suggestions:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Try a shorter meeting duration" >> $GITHUB_STEP_SUMMARY
+          echo "- Extend the search period" >> $GITHUB_STEP_SUMMARY
+          echo "- Check for conflicting appointments" >> $GITHUB_STEP_SUMMARY
+        fi
