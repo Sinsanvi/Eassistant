@@ -53,6 +53,10 @@ class EAssistant {
       // Process emails for meeting requests
       console.log('📅 Processing emails for automated meeting requests...');
       console.log(`🔍 Checking ${allEmailsForMeetingRequests.length} total emails (${emails.length} unread + ${recentEmails.length} recent)`);
+      
+      // Clear old processed requests to prevent memory buildup
+      this.autoMeetingService.clearOldProcessedRequests();
+      
       let meetingRequestResults = null;
       try {
         const meetingRequests = await this.autoMeetingService.processEmailsForMeetingRequests(allEmailsForMeetingRequests);

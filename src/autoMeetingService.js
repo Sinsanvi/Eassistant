@@ -20,12 +20,24 @@ class AutoMeetingService {
     
     console.log(`🔍 Scanning ${emails.length} emails for meeting requests...`);
     
+    // Track processed email IDs to prevent duplicates
+    const processedInThisRun = new Set();
+    
     for (const email of emails) {
       try {
-        // Skip if already processed
+        // Skip if already processed in previous runs
         if (this.processedRequests.has(email.id)) {
+          console.log(`⏭️ Skipping email ${email.id} - already processed in previous run`);
           continue;
         }
+        
+        // Skip if already processed in this run (deduplication)
+        if (processedInThisRun.has(email.id)) {
+          console.log(`⏭️ Skipping email ${email.id} - already processed in this run`);
+          continue;
+        }
+        
+        processedInThisRun.add(email.id);
         
         // Parse the email for meeting request
         const parsed = this.emailParser.parseMeetingRequest(
@@ -306,6 +318,23 @@ For manual booking: https://github.com/Sinsanvi/Eassistant/actions
   clearProcessedRequests() {
     this.processedRequests.clear();
     console.log('🧹 Cleared processed requests cache');
+  }
+  
+  // Clear old processed requests (older than 24 hours)
+  clearOldProcessedRequests() {
+    const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    let cleared = 0;
+    
+    for (const [emailId, timestamp] of this.processedRequests.entries()) {
+      if (timestamp < oneDayAgo) {
+        this.processedRequests.delete(emailId);
+        cleared++;
+      }
+    }
+    
+    if (cleared > 0) {
+      console.log(`🧹 Cleared ${cleared} old processed requests (>24 hours)`);
+    }
   }
 }
 

@@ -109,49 +109,31 @@ class EmailParser {
   }
 
   extractAttendees(text, senderEmail) {
+    console.log(`📧 DEBUG - Input text: "${text}"`);
+    console.log(`📧 DEBUG - Sender email: "${senderEmail}"`);
+    
     const emails = [];
     
-    // More targeted patterns to find attendees mentioned in meeting context
-    const attendeePatterns = [
-      // "with user@example.com"
-      /with\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
-      // "invite user@example.com"
-      /invite\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
-      // "include user@example.com"  
-      /include\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
-      // Emails mentioned after meeting keywords (within 50 characters)
-      /(?:book|schedule|set up|arrange).*?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi
+    // VERY strict patterns - only emails explicitly mentioned with "with"
+    const strictPatterns = [
+      /with\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi
     ];
     
-    // Extract emails using contextual patterns
-    for (const pattern of attendeePatterns) {
+    // Extract ONLY emails mentioned with "with"
+    for (const pattern of strictPatterns) {
       let match;
-      pattern.lastIndex = 0; // Reset regex
+      pattern.lastIndex = 0;
       while ((match = pattern.exec(text)) !== null) {
         const email = match[1].toLowerCase().trim();
+        console.log(`📧 DEBUG - Found email with "with": ${email}`);
+        
         if (email !== senderEmail.toLowerCase() && 
             !emails.includes(email) &&
             this.isValidEmail(email)) {
           emails.push(email);
-          console.log(`📧 Found attendee in context: ${email}`);
-        }
-      }
-    }
-    
-    // Fallback: if no contextual emails found, look for any email in the main content
-    // but exclude common signature/header locations
-    if (emails.length === 0) {
-      console.log('📧 No contextual attendees found, trying fallback pattern...');
-      const bodyOnly = text.replace(/from:|to:|cc:|subject:|signature:|regards,|best,|thanks,/gi, '');
-      const matches = bodyOnly.match(this.emailPattern) || [];
-      
-      for (const email of matches) {
-        const cleanEmail = email.toLowerCase().trim();
-        if (cleanEmail !== senderEmail.toLowerCase() && 
-            !emails.includes(cleanEmail) &&
-            this.isValidEmail(cleanEmail)) {
-          emails.push(cleanEmail);
-          console.log(`📧 Found attendee in fallback: ${cleanEmail}`);
+          console.log(`✅ Added attendee: ${email}`);
+        } else {
+          console.log(`❌ Skipped email: ${email} (duplicate or sender)`);
         }
       }
     }
@@ -159,15 +141,19 @@ class EmailParser {
     // Always include the sender as an attendee
     if (this.isValidEmail(senderEmail) && !emails.includes(senderEmail.toLowerCase())) {
       emails.push(senderEmail.toLowerCase());
+      console.log(`✅ Added sender: ${senderEmail.toLowerCase()}`);
     }
     
-    // Safety limit: max 5 attendees for auto-parsed meetings
-    if (emails.length > 5) {
-      console.warn(`⚠️ Too many attendees found (${emails.length}), limiting to first 5`);
-      emails.splice(5);
+    // Absolute limit: max 3 attendees for auto-parsed meetings
+    if (emails.length > 3) {
+      console.warn(`⚠️ Too many attendees found (${emails.length}), limiting to sender + first 2 mentioned`);
+      // Keep sender + first 2 mentioned emails
+      const senderIndex = emails.indexOf(senderEmail.toLowerCase());
+      const otherEmails = emails.filter(e => e !== senderEmail.toLowerCase()).slice(0, 2);
+      emails.splice(0, emails.length, senderEmail.toLowerCase(), ...otherEmails);
     }
     
-    console.log(`📧 Final attendee list: ${JSON.stringify(emails)}`);
+    console.log(`📧 FINAL attendee list (${emails.length} people): ${JSON.stringify(emails)}`);
     return emails;
   }
 
