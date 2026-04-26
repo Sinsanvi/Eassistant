@@ -5,6 +5,7 @@ const PriorityService = require('./priorityService');
 const MeetingService = require('./meetingService');
 const EmailSender = require('./emailSender');
 const MeetingBooker = require('./meetingBooker');
+const AutoMeetingService = require('./autoMeetingService');
 const config = require('./config');
 const moment = require('moment');
 
@@ -17,6 +18,7 @@ class EAssistant {
     this.meetingService = new MeetingService();
     this.emailSender = new EmailSender();
     this.meetingBooker = new MeetingBooker();
+    this.autoMeetingService = new AutoMeetingService();
   }
 
   async generateSummary() {
@@ -42,6 +44,23 @@ class EAssistant {
       ]);
 
       console.log(`📧 Found ${emails.length} unread emails and ${events.length} events`);
+
+      // Process emails for meeting requests
+      console.log('📅 Processing emails for automated meeting requests...');
+      let meetingRequestResults = null;
+      try {
+        const meetingRequests = await this.autoMeetingService.processEmailsForMeetingRequests(emails);
+        if (meetingRequests.length > 0) {
+          console.log(`🤖 Found ${meetingRequests.length} meeting request(s), processing...`);
+          const processResults = await this.autoMeetingService.processMeetingRequests(meetingRequests);
+          meetingRequestResults = await this.autoMeetingService.generateMeetingRequestSummary(meetingRequests, processResults);
+          console.log(`✅ Processed ${processResults.filter(r => r.success).length}/${processResults.length} meeting requests successfully`);
+        } else {
+          console.log('📭 No meeting requests found in emails');
+        }
+      } catch (error) {
+        console.warn('⚠️ Error processing meeting requests:', error.message);
+      }
 
       // Analyze priorities
       console.log('🔍 Analyzing priorities...');
@@ -75,6 +94,7 @@ class EAssistant {
         aiSummary,
         conflicts,
         availableSlots: availableSlots.slice(0, 10),
+        meetingRequests: meetingRequestResults,
         generationTime: Date.now() - startTime
       };
 
@@ -91,9 +111,12 @@ class EAssistant {
           highPriorityEmails: priorityReport.summary.highPriorityEmails,
           highPriorityEvents: priorityReport.summary.highPriorityEvents,
           conflictsFound: conflicts.length,
-          availableSlots: availableSlots.length
+          availableSlots: availableSlots.length,
+          meetingRequestsProcessed: meetingRequestResults?.summary?.total || 0,
+          meetingRequestsSuccessful: meetingRequestResults?.summary?.successful || 0
         },
         emailDelivery: emailResult,
+        meetingRequests: meetingRequestResults,
         processingTime: Date.now() - startTime
       };
 

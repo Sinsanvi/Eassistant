@@ -30,6 +30,32 @@ class EmailSender {
         throw new Error('Email transporter not configured');
       }
 
+      // Support for custom content (used by AutoMeetingService)
+      if (summaryData.customContent) {
+        const recipientEmail = summaryData.recipientOverride || config.get('notification.recipientEmail');
+        if (!recipientEmail) {
+          throw new Error('No recipient email configured');
+        }
+
+        const mailOptions = {
+          from: config.get('email.user'),
+          to: recipientEmail,
+          subject: summaryData.customContent.subject,
+          html: summaryData.customContent.html,
+          text: summaryData.customContent.text
+        };
+
+        const result = await this.transporter.sendMail(mailOptions);
+        
+        console.log('Custom email sent successfully:', result.messageId);
+        return {
+          success: true,
+          messageId: result.messageId,
+          timestamp: moment().toISOString()
+        };
+      }
+
+      // Regular summary email
       const recipientEmail = config.get('notification.recipientEmail');
       if (!recipientEmail) {
         throw new Error('No recipient email configured');
@@ -70,7 +96,8 @@ class EmailSender {
       priorityReport, 
       aiSummary, 
       conflicts, 
-      availableSlots 
+      availableSlots,
+      meetingRequests 
     } = data;
 
     const currentTime = moment().format('MMMM Do, YYYY [at] h:mm A');
@@ -109,6 +136,7 @@ class EmailSender {
             ${this.generateHighPrioritySection(priorityReport)}
             ${this.generateTodaysScheduleSection(events)}
             ${this.generateConflictsSection(conflicts)}
+            ${this.generateMeetingRequestsSection(meetingRequests)}
             ${this.generateAvailableSlotsSection(availableSlots)}
             ${this.generateRecentEmailsSection(priorityReport)}
             
@@ -263,6 +291,36 @@ Next summary: ${this.getNextSummaryTime()}
     <div class="section">
         <h3><span class="emoji">⚠️</span>Schedule Conflicts</h3>
         ${conflictItems}
+    </div>`;
+  }
+
+  generateMeetingRequestsSection(meetingRequests) {
+    if (!meetingRequests || meetingRequests.summary.total === 0) {
+      return '';
+    }
+
+    const { summary, requests } = meetingRequests;
+    const status = summary.successful === summary.total ? 'priority-low' : 
+                   summary.successful > 0 ? 'priority-medium' : 'priority-high';
+
+    const requestItems = requests.map(req => `
+      <div style="background: white; padding: 10px; margin: 5px 0; border-radius: 6px; border-left: 3px solid ${req.result ? '#28a745' : '#dc3545'};">
+          <div style="font-weight: bold; color: ${req.result ? '#28a745' : '#dc3545'};">
+            ${req.result ? '✅' : '❌'} ${req.title}
+          </div>
+          <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+            From: ${req.sender} • Confidence: ${(req.confidence * 100).toFixed(1)}%
+            ${req.error ? `<br><span style="color: #dc3545;">Error: ${req.error}</span>` : ''}
+          </div>
+      </div>
+    `).join('');
+
+    return `
+    <div class="section ${status}">
+        <h3><span class="emoji">🤖</span>Automated Meeting Requests</h3>
+        <p>Processed ${summary.total} meeting request(s): ${summary.successful} successful, ${summary.failed} failed</p>
+        ${requestItems}
+        ${summary.failed > 0 ? '<p style="color: #dc3545; font-size: 0.9em; margin-top: 10px;">Failed requests have been replied to with troubleshooting instructions.</p>' : ''}
     </div>`;
   }
 

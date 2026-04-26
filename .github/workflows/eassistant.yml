@@ -73,6 +73,9 @@ jobs:
           "prioritiesDocumentPath": "./priorities.md",
           "notification": {
             "recipientEmail": "${{ secrets.NOTIFICATION_EMAIL }}"
+          },
+          "github": {
+            "token": "${{ secrets.GITHUB_TOKEN }}"
           }
         }
         EOF
@@ -88,6 +91,7 @@ jobs:
         HF_API_KEY=${{ secrets.HF_API_KEY }}
         NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}
         TIMEZONE=${{ vars.TIMEZONE || 'America/New_York' }}
+        GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
         EOF
         
     - name: Test connections
