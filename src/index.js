@@ -43,13 +43,19 @@ class EAssistant {
         })
       ]);
 
+      // Combine unread and recent emails for meeting request processing (to catch already-read emails)
+      const allEmailsForMeetingRequests = [...emails, ...recentEmails].filter((email, index, self) => 
+        index === self.findIndex(e => e.id === email.id)
+      );
+
       console.log(`📧 Found ${emails.length} unread emails and ${events.length} events`);
 
       // Process emails for meeting requests
       console.log('📅 Processing emails for automated meeting requests...');
+      console.log(`🔍 Checking ${allEmailsForMeetingRequests.length} total emails (${emails.length} unread + ${recentEmails.length} recent)`);
       let meetingRequestResults = null;
       try {
-        const meetingRequests = await this.autoMeetingService.processEmailsForMeetingRequests(emails);
+        const meetingRequests = await this.autoMeetingService.processEmailsForMeetingRequests(allEmailsForMeetingRequests);
         if (meetingRequests.length > 0) {
           console.log(`🤖 Found ${meetingRequests.length} meeting request(s), processing...`);
           const processResults = await this.autoMeetingService.processMeetingRequests(meetingRequests);

@@ -134,7 +134,7 @@ class EmailParser {
     const now = moment().tz(this.timeZone);
     
     // Try to find tomorrow references
-    const tomorrowMatch = text.match(/tomorrow\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+    const tomorrowMatch = text.match(/tomorrow\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)(?:\s+est|et|pst|pt|cst|ct|mst|mt)?)/i);
     if (tomorrowMatch) {
       const time = this.parseTime(tomorrowMatch[1]);
       if (time) {
@@ -220,8 +220,8 @@ class EmailParser {
     
     const cleanTime = timeStr.trim().toLowerCase();
     
-    // Handle 12-hour format
-    const ampmMatch = cleanTime.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/);
+    // Handle 12-hour format (with optional timezone)
+    const ampmMatch = cleanTime.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s+est|et|pst|pt|cst|ct|mst|mt)?/);
     if (ampmMatch) {
       let hour = parseInt(ampmMatch[1]);
       const minute = parseInt(ampmMatch[2]) || 0;
