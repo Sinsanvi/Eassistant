@@ -18,6 +18,9 @@ class GitHubApiService {
 
   async triggerWorkflow(workflowId, inputs = {}) {
     try {
+      console.log(`🔧 DEBUG - GitHub token configured: ${!!this.token}`);
+      console.log(`🔧 DEBUG - Token length: ${this.token ? this.token.length : 0}`);
+      
       if (!this.token) {
         throw new Error('GitHub token not configured');
       }
@@ -25,6 +28,7 @@ class GitHubApiService {
       const url = `${this.baseUrl}/repos/${this.owner}/${this.repo}/actions/workflows/${workflowId}/dispatches`;
       
       console.log(`🚀 Triggering GitHub workflow: ${workflowId}`);
+      console.log(`🔧 DEBUG - Full URL: ${url}`);
       console.log(`📝 Inputs:`, inputs);
       
       const response = await axios.post(url, {
@@ -55,13 +59,20 @@ class GitHubApiService {
       console.error('❌ Error triggering GitHub workflow:', error.message);
       
       if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
+        console.error(`🔧 DEBUG - Response status: ${error.response.status}`);
+        console.error(`🔧 DEBUG - Response data:`, JSON.stringify(error.response.data, null, 2));
+        console.error(`🔧 DEBUG - Response headers:`, error.response.headers);
+      } else if (error.request) {
+        console.error(`🔧 DEBUG - Network error:`, error.request);
+      } else {
+        console.error(`🔧 DEBUG - Error details:`, error);
       }
       
       return {
         success: false,
         error: error.message,
+        statusCode: error.response?.status,
+        responseData: error.response?.data,
         workflowId: workflowId,
         inputs: inputs
       };
