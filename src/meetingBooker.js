@@ -108,9 +108,11 @@ class MeetingBooker {
     const endMoment = startMoment.clone().add(duration, 'minutes');
 
     // Format attendees
+    console.log(`🔍 DEBUG MeetingBooker - Raw attendees input:`, JSON.stringify(attendees));
     const formattedAttendees = attendees.map(email => 
-      typeof email === 'string' ? { email } : email
+      typeof email === 'string' ? { email: email.trim() } : email
     );
+    console.log(`🔍 DEBUG MeetingBooker - Formatted attendees:`, JSON.stringify(formattedAttendees));
 
     return {
       title,

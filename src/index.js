@@ -370,6 +370,9 @@ async function main() {
       const attendees = (process.argv[6] || process.env.MEETING_ATTENDEES || '').split(',').filter(email => email.trim());
       const meetingDuration = parseInt(process.argv[7] || process.env.MEETING_DURATION || '60');
 
+      console.log(`🔍 DEBUG CLI - Raw attendees string: "${process.argv[6] || process.env.MEETING_ATTENDEES || ''}"`);
+      console.log(`🔍 DEBUG CLI - Parsed attendees array:`, JSON.stringify(attendees));
+
       if (!date || !time) {
         console.log('❌ Error: Date and time are required');
         console.log('Usage: npm start book "Meeting Title" "YYYY-MM-DD" "HH:MM" "email1@example.com,email2@example.com" [duration]');

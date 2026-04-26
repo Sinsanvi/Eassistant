@@ -102,6 +102,8 @@ class AutoMeetingService {
       console.log(`   Time: ${formattedMeeting.time}`);
       console.log(`   Attendees: ${formattedMeeting.attendees}`);
       console.log(`   Duration: ${formattedMeeting.duration} minutes`);
+      console.log(`🔍 DEBUG - Parsed attendees array:`, JSON.stringify(parsed.attendees));
+      console.log(`🔍 DEBUG - Formatted attendees string: "${formattedMeeting.attendees}"`);
       
       // Trigger GitHub workflow
       const workflowResult = await this.githubService.triggerMeetingBooking(formattedMeeting);
