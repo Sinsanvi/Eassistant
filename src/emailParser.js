@@ -110,15 +110,49 @@ class EmailParser {
 
   extractAttendees(text, senderEmail) {
     const emails = [];
-    const matches = text.match(this.emailPattern) || [];
     
-    for (const email of matches) {
-      const cleanEmail = email.toLowerCase().trim();
-      // Don't include the sender's email as an attendee
-      if (cleanEmail !== senderEmail.toLowerCase() && 
-          !emails.includes(cleanEmail) &&
-          this.isValidEmail(cleanEmail)) {
-        emails.push(cleanEmail);
+    // More targeted patterns to find attendees mentioned in meeting context
+    const attendeePatterns = [
+      // "with user@example.com"
+      /with\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
+      // "invite user@example.com"
+      /invite\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
+      // "include user@example.com"  
+      /include\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi,
+      // Emails mentioned after meeting keywords (within 50 characters)
+      /(?:book|schedule|set up|arrange).*?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})/gi
+    ];
+    
+    // Extract emails using contextual patterns
+    for (const pattern of attendeePatterns) {
+      let match;
+      pattern.lastIndex = 0; // Reset regex
+      while ((match = pattern.exec(text)) !== null) {
+        const email = match[1].toLowerCase().trim();
+        if (email !== senderEmail.toLowerCase() && 
+            !emails.includes(email) &&
+            this.isValidEmail(email)) {
+          emails.push(email);
+          console.log(`📧 Found attendee in context: ${email}`);
+        }
+      }
+    }
+    
+    // Fallback: if no contextual emails found, look for any email in the main content
+    // but exclude common signature/header locations
+    if (emails.length === 0) {
+      console.log('📧 No contextual attendees found, trying fallback pattern...');
+      const bodyOnly = text.replace(/from:|to:|cc:|subject:|signature:|regards,|best,|thanks,/gi, '');
+      const matches = bodyOnly.match(this.emailPattern) || [];
+      
+      for (const email of matches) {
+        const cleanEmail = email.toLowerCase().trim();
+        if (cleanEmail !== senderEmail.toLowerCase() && 
+            !emails.includes(cleanEmail) &&
+            this.isValidEmail(cleanEmail)) {
+          emails.push(cleanEmail);
+          console.log(`📧 Found attendee in fallback: ${cleanEmail}`);
+        }
       }
     }
     
@@ -127,6 +161,13 @@ class EmailParser {
       emails.push(senderEmail.toLowerCase());
     }
     
+    // Safety limit: max 5 attendees for auto-parsed meetings
+    if (emails.length > 5) {
+      console.warn(`⚠️ Too many attendees found (${emails.length}), limiting to first 5`);
+      emails.splice(5);
+    }
+    
+    console.log(`📧 Final attendee list: ${JSON.stringify(emails)}`);
     return emails;
   }
 
