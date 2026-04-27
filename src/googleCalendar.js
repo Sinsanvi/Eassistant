@@ -115,6 +115,14 @@ class GoogleCalendarService {
           timeZone: config.get('scheduling.timeZone'),
         },
         attendees: eventData.attendees || [],
+        conferenceData: {
+          createRequest: {
+            requestId: `meet-${Date.now()}`, // Unique request ID
+            conferenceSolutionKey: {
+              type: 'hangoutsMeet'
+            }
+          }
+        },
         reminders: {
           useDefault: false,
           overrides: [
@@ -124,10 +132,21 @@ class GoogleCalendarService {
         },
       };
 
+      console.log('📹 Adding Google Meet link to meeting...');
+
       const response = await this.calendar.events.insert({
         calendarId: 'primary',
         resource: event,
+        conferenceDataVersion: 1, // Required for conference data
       });
+
+      // Log the meet link if created successfully
+      const meetLink = response.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri;
+      if (meetLink) {
+        console.log(`📹 Google Meet link created: ${meetLink}`);
+      } else {
+        console.log('📹 Google Meet link creation may be pending...');
+      }
 
       return response.data;
     } catch (error) {

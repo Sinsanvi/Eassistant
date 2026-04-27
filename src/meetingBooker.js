@@ -52,6 +52,12 @@ class MeetingBooker {
       if (result.success) {
         console.log('✅ Meeting booked successfully!');
         
+        // Extract and log the Google Meet link
+        const meetLink = result.event.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri;
+        if (meetLink) {
+          console.log(`📹 Video meeting link: ${meetLink}`);
+        }
+        
         // Send confirmation email if requested
         if (options.sendConfirmation) {
           await this.sendConfirmationEmail(meetingDetails, result.event);
@@ -61,6 +67,7 @@ class MeetingBooker {
           success: true,
           meeting: result.event,
           details: meetingDetails,
+          meetLink: meetLink,
           message: 'Meeting successfully created and invitations sent'
         };
       } else {
@@ -121,6 +128,9 @@ class MeetingBooker {
       finalDescription += '\n\nAgenda:\n' + agenda.map((item, index) => `${index + 1}. ${item}`).join('\n');
       console.log(`📋 Added agenda to description: ${agenda.length} items`);
     }
+    
+    // Add video meeting info to description
+    finalDescription += '\n\n📹 This meeting includes a video call link that will be automatically added.';
 
     return {
       title,
