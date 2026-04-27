@@ -85,6 +85,7 @@ class MeetingBooker {
       time,
       duration = 60,
       attendees = [],
+      agenda = [],
       timezone = this.timeZone
     } = options;
 
@@ -114,9 +115,16 @@ class MeetingBooker {
     );
     console.log(`🔍 DEBUG MeetingBooker - Formatted attendees:`, JSON.stringify(formattedAttendees));
 
+    // Add agenda to description if provided
+    let finalDescription = description;
+    if (agenda && agenda.length > 0) {
+      finalDescription += '\n\nAgenda:\n' + agenda.map((item, index) => `${index + 1}. ${item}`).join('\n');
+      console.log(`📋 Added agenda to description: ${agenda.length} items`);
+    }
+
     return {
       title,
-      description,
+      description: finalDescription,
       startTime: startMoment.toISOString(),
       endTime: endMoment.toISOString(),
       attendees: formattedAttendees,

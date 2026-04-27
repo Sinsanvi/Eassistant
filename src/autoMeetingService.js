@@ -114,6 +114,7 @@ class AutoMeetingService {
       console.log(`   Time: ${formattedMeeting.time}`);
       console.log(`   Attendees: ${formattedMeeting.attendees}`);
       console.log(`   Duration: ${formattedMeeting.duration} minutes`);
+      console.log(`   Agenda: ${JSON.stringify(formattedMeeting.agenda)}`);
       console.log(`🔍 DEBUG - Parsed attendees array:`, JSON.stringify(parsed.attendees));
       console.log(`🔍 DEBUG - Formatted attendees string: "${formattedMeeting.attendees}"`);
       

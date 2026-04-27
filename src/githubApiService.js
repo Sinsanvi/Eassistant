@@ -88,12 +88,19 @@ class GitHubApiService {
         throw new Error('Missing required meeting details: date, time, or attendees');
       }
 
+      // Format agenda for description
+      let agendaDescription = '';
+      if (meetingDetails.agenda && meetingDetails.agenda.length > 0) {
+        agendaDescription = '\n\nAgenda:\n' + meetingDetails.agenda.map((item, index) => `${index + 1}. ${item}`).join('\n');
+      }
+
       const workflowInputs = {
         meeting_title: meetingDetails.title || 'Automated Meeting',
         meeting_date: meetingDetails.date,
         meeting_time: meetingDetails.time,
         attendees: meetingDetails.attendees,
         duration: meetingDetails.duration || '60',
+        agenda_description: agendaDescription,
         send_confirmation: 'true'
       };
 

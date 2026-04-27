@@ -65,6 +65,7 @@ class EmailParser {
         attendees: this.extractAttendees(emailBody, senderEmail),
         dateTime: this.extractDateTime(fullText),
         duration: this.extractDuration(fullText),
+        agenda: this.extractAgenda(emailBody),
         confidence: 0
       };
 
@@ -358,6 +359,83 @@ class EmailParser {
     return Math.max(15, Math.min(duration, 480)); // Between 15 minutes and 8 hours
   }
 
+  extractAgenda(text) {
+    console.log(`📋 DEBUG - Extracting agenda from text: "${text}"`);
+    
+    const agendaItems = [];
+    
+    // Look for common agenda patterns
+    const agendaPatterns = [
+      // "Agenda:" followed by items
+      /agenda\s*:\s*(.*?)(?:\n\n|\n(?![^\n]*[-*•\d]))/si,
+      // "Topics:" followed by items  
+      /topics?\s*:\s*(.*?)(?:\n\n|\n(?![^\n]*[-*•\d]))/si,
+      // "Discussion:" followed by items
+      /discussion\s*:\s*(.*?)(?:\n\n|\n(?![^\n]*[-*•\d]))/si,
+    ];
+    
+    for (const pattern of agendaPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        console.log(`📋 Found agenda section: "${match[1]}"`);
+        const agendaText = match[1].trim();
+        
+        // Extract individual agenda items
+        const itemPatterns = [
+          // Numbered items: 1. Finance, 2. Hiring
+          /(\d+\.?\s*[^\n]+)/g,
+          // Bulleted items: - Finance, * Hiring, • Finance
+          /([•*-]\s*[^\n]+)/g,
+        ];
+        
+        for (const itemPattern of itemPatterns) {
+          let itemMatch;
+          itemPattern.lastIndex = 0;
+          while ((itemMatch = itemPattern.exec(agendaText)) !== null) {
+            const item = itemMatch[1].trim()
+              .replace(/^[\d•*-]+\.?\s*/, '') // Remove bullets/numbers
+              .trim();
+            
+            if (item.length > 2 && !agendaItems.includes(item)) {
+              agendaItems.push(item);
+              console.log(`📋 Added agenda item: "${item}"`);
+            }
+          }
+        }
+        
+        if (agendaItems.length > 0) break; // Found agenda items, stop looking
+      }
+    }
+    
+    // Fallback: look for any numbered/bulleted lists in the email
+    if (agendaItems.length === 0) {
+      console.log('📋 No explicit agenda found, looking for lists...');
+      const listPatterns = [
+        /(\d+\.\s*[^\n]{3,50})/g,
+        /([•*-]\s*[^\n]{3,50})/g,
+      ];
+      
+      for (const pattern of listPatterns) {
+        let match;
+        pattern.lastIndex = 0;
+        while ((match = pattern.exec(text)) !== null) {
+          const item = match[1].trim()
+            .replace(/^[\d•*-]+\.?\s*/, '')
+            .trim();
+          
+          if (item.length > 2 && !agendaItems.includes(item) && agendaItems.length < 5) {
+            agendaItems.push(item);
+            console.log(`📋 Added list item as agenda: "${item}"`);
+          }
+        }
+        if (agendaItems.length > 0) break;
+      }
+    }
+    
+    console.log(`📋 Final agenda items (${agendaItems.length}): ${JSON.stringify(agendaItems)}`);
+    return agendaItems;
+  }
+
   calculateConfidence(meetingDetails, text) {
     let confidence = 0;
     
@@ -404,6 +482,7 @@ class EmailParser {
       time: parsed.dateTime?.time,
       attendees: parsed.attendees.join(','),
       duration: parsed.duration.toString(),
+      agenda: parsed.agenda || [],
       senderEmail: parsed.senderEmail,
       confidence: parsed.confidence,
       source: parsed.dateTime?.source || 'unknown'
